@@ -39,6 +39,7 @@ var ErrNoRouteFound = errors.New("no route found")
 
 type HTTPReverseProxyOptions struct {
 	ResponseHeaderTimeoutS int64
+	HTTPSPort              int
 }
 
 type HTTPReverseProxy struct {
@@ -46,6 +47,7 @@ type HTTPReverseProxy struct {
 	vhostRouter *Routers
 
 	responseHeaderTimeout time.Duration
+	httpsPort             int
 }
 
 func NewHTTPReverseProxy(option HTTPReverseProxyOptions, vhostRouter *Routers) *HTTPReverseProxy {
@@ -55,6 +57,7 @@ func NewHTTPReverseProxy(option HTTPReverseProxyOptions, vhostRouter *Routers) *
 	rp := &HTTPReverseProxy{
 		responseHeaderTimeout: time.Duration(option.ResponseHeaderTimeoutS) * time.Second,
 		vhostRouter:           vhostRouter,
+		httpsPort:             option.HTTPSPort,
 	}
 	proxy := &httputil.ReverseProxy{
 		// Modify incoming requests by route policies.
@@ -278,6 +281,17 @@ func (rp *HTTPReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request)
 			rw.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
 			http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		}
+		return
+	}
+
+	if rc != nil && rc.RedirectHTTPS {
+		host, _ := httppkg.CanonicalHost(req.Host)
+		target := "https://" + host
+		if rp.httpsPort != 0 && rp.httpsPort != 443 {
+			target += fmt.Sprintf(":%d", rp.httpsPort)
+		}
+		target += req.URL.RequestURI()
+		http.Redirect(rw, req, target, http.StatusMovedPermanently)
 		return
 	}
 
